@@ -54,7 +54,7 @@ resource "aws_ecs_task_definition" "client" {
   execution_role_arn       = var.ecs_execution_role
 
   container_definitions = jsonencode([{
-    "image" : format("%s:qa", var.client_ecr_uri),
+    "image" : format("%s:latest", var.client_ecr_uri),
     "cpu" : 256,
     "memory" : 512,
     "name" : "client",
@@ -85,7 +85,7 @@ resource "aws_ecs_task_definition" "strapi" {
   memory                   = 512
 
   container_definitions = jsonencode([{
-    "image" : format("%s:qa", var.strapi_ecr_uri),
+    "image" : format("%s:latest", var.strapi_ecr_uri),
     "cpu" : 256,
     "memory" : 512,
     "name" : "strapi",
