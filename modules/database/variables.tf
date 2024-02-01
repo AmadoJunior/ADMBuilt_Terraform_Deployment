@@ -7,6 +7,11 @@ variable "vpc_id" {
 variable "private_subnets" {
   type = list(string)
 }
+variable "db_username" {
+  description = "RDS root user name"
+  type        = string
+  sensitive   = true
+}
 variable "db_password" {
   description = "RDS root user password"
   type        = string

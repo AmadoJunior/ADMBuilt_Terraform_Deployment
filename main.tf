@@ -40,8 +40,17 @@ module "database" {
   environment              = var.environment
   vpc_id                   = module.network.vpc_id
   private_subnets          = module.network.private_subnets.*.id
+  db_username              = var.db_username
   db_password              = var.db_password
   strapi_security_group_id = aws_security_group.strapi.id
+}
+
+# Log Group
+resource "aws_cloudwatch_log_group" "log_group" {
+  name = "/ecs/service"
+  tags = {
+    Environment = var.environment
+  }
 }
 
 # ECS Task Definition
@@ -62,8 +71,8 @@ resource "aws_ecs_task_definition" "client" {
     "networkMode" : "awsvpc",
     "portMappings" : [
       {
-        "containerPort" : 1337,
-        "hostPort" : 1337
+        "containerPort" : 3000,
+        "hostPort" : 3000
       }
     ],
     "environment" : concat(var.client_env, [
@@ -75,7 +84,15 @@ resource "aws_ecs_task_definition" "client" {
         "name" : "VITE_API_ENDPOINT",
         "value" : "https://${var.environment}.com"
       }
-    ])
+    ]),
+    "logConfiguration" : {
+      "logDriver" : "awslogs"
+      "options" : {
+        "awslogs-group"         = aws_cloudwatch_log_group.log_group.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
   }])
 }
 resource "aws_ecs_task_definition" "strapi" {
@@ -84,6 +101,8 @@ resource "aws_ecs_task_definition" "strapi" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = 256
   memory                   = 512
+  task_role_arn            = var.ecs_task_role
+  execution_role_arn       = var.ecs_execution_role
 
   container_definitions = jsonencode([{
     "image" : format("%s:latest", var.strapi_ecr_uri),
@@ -100,25 +119,33 @@ resource "aws_ecs_task_definition" "strapi" {
     "environment" : concat(var.strapi_env, [
       {
         "name" : "DATABASE_HOST",
-        "value" : module.database.rds_hostname
+        "value" : "${module.database.rds_hostname}"
       },
       {
         "name" : "DATABASE_PORT",
-        "value" : module.database.rds_port
+        "value" : "3306"
       },
       {
         "name" : "DATABASE_NAME",
-        "value" : module.database.rds_db_name
+        "value" : "${module.database.rds_db_name}"
       },
       {
         "name" : "DATABASE_USERNAME",
-        "value" : module.database.rds_username
+        "value" : "${module.database.rds_username}"
       },
       {
         "name" : "DATABASE_PASSWORD",
-        "value" : var.db_password
+        "value" : "${var.db_password}"
       },
-    ])
+    ]),
+    "logConfiguration" : {
+      "logDriver" : "awslogs"
+      "options" : {
+        "awslogs-group"         = aws_cloudwatch_log_group.log_group.name
+        "awslogs-region"        = var.aws_region
+        "awslogs-stream-prefix" = "ecs"
+      }
+    }
   }])
 
   depends_on = [module.database.rds_instance]
@@ -166,14 +193,26 @@ resource "aws_security_group" "strapi" {
 resource "aws_ecs_cluster" "main" {
   name = "${var.environment}-cluster"
 }
+resource "aws_ecs_cluster_capacity_providers" "main" {
+  cluster_name = aws_ecs_cluster.main.name
+
+  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
+
+  default_capacity_provider_strategy {
+    base              = 0
+    weight            = 1
+    capacity_provider = "FARGATE_SPOT"
+  }
+}
 
 # ECS Services
 resource "aws_ecs_service" "client" {
-  name            = "${var.environment}-client-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.client.arn
-  desired_count   = var.client_count
-  launch_type     = "FARGATE"
+  health_check_grace_period_seconds = 0
+  propagate_tags                    = "NONE"
+  name                              = "${var.environment}-client-service"
+  cluster                           = aws_ecs_cluster.main.id
+  task_definition                   = aws_ecs_task_definition.client.arn
+  desired_count                     = var.client_count
 
   network_configuration {
     security_groups = [aws_security_group.client.id]
@@ -186,17 +225,34 @@ resource "aws_ecs_service" "client" {
     container_port   = 3000
   }
 
+  capacity_provider_strategy {
+    base              = 0
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+  }
+
+  deployment_circuit_breaker {
+    enable   = false
+    rollback = false
+  }
+
+  deployment_controller {
+    type = "ECS"
+  }
+
+  tags       = {}
   depends_on = [module.lb.lb_listener]
 }
 resource "aws_ecs_service" "strapi" {
-  name            = "${var.environment}-strapi-service"
-  cluster         = aws_ecs_cluster.main.id
-  task_definition = aws_ecs_task_definition.strapi.arn
-  desired_count   = var.strapi_count
-  launch_type     = "FARGATE"
+  health_check_grace_period_seconds = 0
+  propagate_tags                    = "NONE"
+  name                              = "${var.environment}-strapi-service"
+  cluster                           = aws_ecs_cluster.main.id
+  task_definition                   = aws_ecs_task_definition.strapi.arn
+  desired_count                     = var.strapi_count
 
   network_configuration {
-    security_groups = [aws_security_group.client.id]
+    security_groups = [aws_security_group.strapi.id]
     subnets         = module.network.private_subnets.*.id
   }
 
@@ -206,5 +262,21 @@ resource "aws_ecs_service" "strapi" {
     container_port   = 1337
   }
 
+  capacity_provider_strategy {
+    base              = 0
+    capacity_provider = "FARGATE_SPOT"
+    weight            = 1
+  }
+
+  deployment_circuit_breaker {
+    enable   = false
+    rollback = false
+  }
+
+  deployment_controller {
+    type = "ECS"
+  }
+
+  tags       = {}
   depends_on = [module.lb.lb_listener, module.database.rds_instance]
 }

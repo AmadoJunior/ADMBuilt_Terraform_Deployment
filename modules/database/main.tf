@@ -40,10 +40,10 @@ resource "aws_db_instance" "main" {
   maintenance_window      = "Mon:00:00-Mon:03:00"
   db_subnet_group_name    = aws_db_subnet_group.default.name
   engine                  = "mysql"
-  engine_version          = "8.0.15"
+  engine_version          = "8.0.35"
   instance_class          = "db.t2.micro"
   db_name                 = var.environment
-  username                = "admin"
+  username                = var.db_username
   password                = var.db_password
   port                    = 3306
   publicly_accessible     = false
