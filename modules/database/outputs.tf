@@ -19,3 +19,8 @@ output "rds_instance" {
   value       = aws_db_instance.main
   description = "The LB Listener"
 }
+output "rds_db_name" {
+  description = "RDS instance db name"
+  value       = aws_db_instance.main.db_name
+  sensitive   = true
+}

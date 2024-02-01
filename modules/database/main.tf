@@ -1,5 +1,5 @@
 resource "aws_db_subnet_group" "default" {
-  name       = "private"
+  name       = "${var.environment}-rds-subnet-group"
   subnet_ids = var.private_subnets
 
   tags = {
@@ -42,6 +42,7 @@ resource "aws_db_instance" "main" {
   engine                  = "mysql"
   engine_version          = "8.0.15"
   instance_class          = "db.t2.micro"
+  db_name                 = var.environment
   username                = "admin"
   password                = var.db_password
   port                    = 3306
