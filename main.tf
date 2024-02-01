@@ -53,24 +53,29 @@ resource "aws_ecs_task_definition" "client" {
   task_role_arn            = var.ecs_task_role
   execution_role_arn       = var.ecs_execution_role
 
-  container_definitions = <<DEFINITION
-  [
-    {
-      "image": "${format("%s:qa", var.client_ecr_uri)}",
-      "cpu": 256,
-      "memory": 512,
-      "name": "client",
-      "networkMode": "awsvpc",
-      "portMappings": [
-        {
-          "containerPort": 3000,
-          "hostPort": 3000
-        }
-      ],
-      "environment": ${jsonencode(var.client_env)}
-    }
-  ]
-  DEFINITION
+  container_definitions = jsonencode([{
+    "image" : format("%s:qa", var.client_ecr_uri),
+    "cpu" : 256,
+    "memory" : 512,
+    "name" : "client",
+    "networkMode" : "awsvpc",
+    "portMappings" : [
+      {
+        "containerPort" : 1337,
+        "hostPort" : 1337
+      }
+    ],
+    "environment" : concat(var.client_env, [
+      {
+        "name" : "APP_DOMAIN",
+        "value" : var.environment
+      },
+      {
+        "name" : "VITE_API_ENDPOINT",
+        "value" : "https://${var.environment}"
+      }
+    ])
+  }])
 }
 resource "aws_ecs_task_definition" "strapi" {
   family                   = "strapi"
@@ -79,24 +84,41 @@ resource "aws_ecs_task_definition" "strapi" {
   cpu                      = 256
   memory                   = 512
 
-  container_definitions = <<DEFINITION
-  [
-    {
-      "image": "${format("%s:qa", var.strapi_ecr_uri)}",
-      "cpu": 256,
-      "memory": 512,
-      "name": "strapi",
-      "networkMode": "awsvpc",
-      "portMappings": [
-        {
-          "containerPort": 1337,
-          "hostPort": 1337
-        }
-      ],
-      "environment": ${jsonencode(var.strapi_env)}
-    }
-  ]
-  DEFINITION
+  container_definitions = jsonencode([{
+    "image" : format("%s:qa", var.strapi_ecr_uri),
+    "cpu" : 256,
+    "memory" : 512,
+    "name" : "strapi",
+    "networkMode" : "awsvpc",
+    "portMappings" : [
+      {
+        "containerPort" : 1337,
+        "hostPort" : 1337
+      }
+    ],
+    "environment" : concat(var.strapi_env, [
+      {
+        "name" : "DATABASE_HOST",
+        "value" : module.database.rds_hostname
+      },
+      {
+        "name" : "DATABASE_PORT",
+        "value" : module.database.rds_port
+      },
+      {
+        "name" : "DATABASE_NAME",
+        "value" : ""
+      },
+      {
+        "name" : "DATABASE_USERNAME",
+        "value" : module.database.rds_username
+      },
+      {
+        "name" : "DATABASE_PASSWORD",
+        "value" : var.db_password
+      },
+    ])
+  }])
 
   depends_on = [module.database.rds_instance, module.database.rds_hostname, module.database.rds_port, module.database.rds_username]
 }
