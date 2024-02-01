@@ -12,3 +12,6 @@ variable "db_password" {
   type        = string
   sensitive   = true
 }
+variable "strapi_security_group_id" {
+  type = string
+}

@@ -36,11 +36,12 @@ module "lb" {
 
 # Setup Database 
 module "database" {
-  source          = "./modules/database"
-  environment     = var.environment
-  vpc_id          = module.network.vpc_id
-  private_subnets = module.network.private_subnets.*.id
-  db_password     = var.db_password
+  source                   = "./modules/database"
+  environment              = var.environment
+  vpc_id                   = module.network.vpc_id
+  private_subnets          = module.network.private_subnets.*.id
+  db_password              = var.db_password
+  strapi_security_group_id = aws_security_group.strapi.id
 }
 
 # ECS Task Definition

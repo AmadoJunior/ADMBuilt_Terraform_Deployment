@@ -15,10 +15,10 @@ resource "aws_security_group" "main" {
 
   # Only MySQL in
   ingress {
-    from_port   = 3306
-    to_port     = 3306
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    from_port       = 3306
+    to_port         = 3306
+    protocol        = "tcp"
+    security_groups = [var.strapi_security_group_id]
   }
 
   # Allow all outbound traffic.
