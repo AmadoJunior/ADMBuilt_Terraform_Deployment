@@ -32,6 +32,11 @@ resource "aws_lb_target_group" "client" {
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
+  health_check {
+    matcher = 200
+    path    = "/index.html"
+    port    = 3000
+  }
 }
 resource "aws_lb_target_group" "strapi" {
   name        = "${var.environment}-strapi-target-group"
@@ -39,6 +44,11 @@ resource "aws_lb_target_group" "strapi" {
   protocol    = "HTTP"
   vpc_id      = var.vpc_id
   target_type = "ip"
+  health_check {
+    matcher = 204
+    path    = "/_health"
+    port    = 1337
+  }
 }
 
 # LB Listener
