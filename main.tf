@@ -180,7 +180,7 @@ resource "aws_ecs_service" "client" {
   }
 
   load_balancer {
-    target_group_arn = module.lb.client_target_group_id
+    target_group_arn = module.lb.client_target_group_arn
     container_name   = "client"
     container_port   = 3000
   }
@@ -200,7 +200,7 @@ resource "aws_ecs_service" "strapi" {
   }
 
   load_balancer {
-    target_group_arn = module.lb.strapi_target_group_id
+    target_group_arn = module.lb.strapi_target_group_arn
     container_name   = "strapi"
     container_port   = 1337
   }

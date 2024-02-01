@@ -53,12 +53,29 @@ resource "aws_lb_target_group" "strapi" {
 
 # LB Listener
 resource "aws_lb_listener" "default" {
-  load_balancer_arn = aws_lb.default.id
+  load_balancer_arn = aws_lb.default.arn
   port              = "80"
   protocol          = "HTTP"
 
   default_action {
-    target_group_arn = aws_lb_target_group.client.id
+    target_group_arn = aws_lb_target_group.client.arn
     type             = "forward"
+  }
+}
+
+# API Listener Rule
+resource "aws_lb_listener_rule" "api" {
+  listener_arn = aws_lb_listener.default.arn
+  priority     = 100
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.strapi.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/api/*"]
+    }
   }
 }
