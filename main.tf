@@ -68,11 +68,11 @@ resource "aws_ecs_task_definition" "client" {
     "environment" : concat(var.client_env, [
       {
         "name" : "APP_DOMAIN",
-        "value" : var.environment
+        "value" : "${var.environment}.com"
       },
       {
         "name" : "VITE_API_ENDPOINT",
-        "value" : "https://${var.environment}"
+        "value" : "https://${var.environment}.com"
       }
     ])
   }])
@@ -107,7 +107,7 @@ resource "aws_ecs_task_definition" "strapi" {
       },
       {
         "name" : "DATABASE_NAME",
-        "value" : ""
+        "value" : module.database.rds_db_name
       },
       {
         "name" : "DATABASE_USERNAME",
@@ -120,7 +120,7 @@ resource "aws_ecs_task_definition" "strapi" {
     ])
   }])
 
-  depends_on = [module.database.rds_instance, module.database.rds_hostname, module.database.rds_port, module.database.rds_username]
+  depends_on = [module.database.rds_instance]
 }
 
 # ECS Task Security Group
