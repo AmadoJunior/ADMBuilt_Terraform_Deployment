@@ -28,10 +28,11 @@ module "network" {
 
 # Setup Load Balancer & Target Groups
 module "lb" {
-  source         = "./modules/lb"
-  environment    = var.environment
-  vpc_id         = module.network.vpc_id
-  public_subnets = module.network.public_subnets.*.id
+  source          = "./modules/lb"
+  environment     = var.environment
+  vpc_id          = module.network.vpc_id
+  public_subnets  = module.network.public_subnets.*.id
+  certificate_arn = var.certificate_arn
 }
 
 # Setup Database 
@@ -252,8 +253,9 @@ resource "aws_ecs_service" "strapi" {
   desired_count                     = var.strapi_count
 
   network_configuration {
-    security_groups = [aws_security_group.strapi.id]
-    subnets         = module.network.private_subnets.*.id
+    security_groups  = [aws_security_group.strapi.id]
+    subnets          = module.network.public_subnets.*.id
+    assign_public_ip = true
   }
 
   load_balancer {

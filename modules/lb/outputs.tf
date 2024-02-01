@@ -15,6 +15,6 @@ output "strapi_target_group_arn" {
   description = "The arn of the Strapi Target Group"
 }
 output "lb_listener" {
-  value       = aws_lb_listener.default
+  value       = aws_lb_listener.https
   description = "The LB Listener"
 }
