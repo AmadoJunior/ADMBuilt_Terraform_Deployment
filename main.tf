@@ -54,20 +54,48 @@ resource "aws_cloudwatch_log_group" "log_group" {
   }
 }
 
+# --- ECS Task Role ---
+data "aws_iam_policy_document" "ecs_task_doc" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    effect  = "Allow"
+
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+}
+
+resource "aws_iam_role" "ecs_task_role" {
+  name_prefix        = "demo-ecs-task-role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_doc.json
+}
+
+resource "aws_iam_role" "ecs_exec_role" {
+  name_prefix        = "demo-ecs-exec-role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_task_doc.json
+}
+
+resource "aws_iam_role_policy_attachment" "ecs_exec_role_policy" {
+  role       = aws_iam_role.ecs_exec_role.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
+}
+
 # ECS Task Definition
 resource "aws_ecs_task_definition" "client" {
   family                   = "client"
   network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
+  requires_compatibilities = ["EC2"]
   cpu                      = 256
-  memory                   = 512
-  task_role_arn            = var.ecs_task_role
-  execution_role_arn       = var.ecs_execution_role
+  memory                   = 256
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = aws_iam_role.ecs_exec_role.arn
 
   container_definitions = jsonencode([{
     "image" : format("%s:latest", var.client_ecr_uri),
     "cpu" : 256,
-    "memory" : 512,
+    "memory" : 256,
     "name" : "client",
     "networkMode" : "awsvpc",
     "portMappings" : [
@@ -99,15 +127,15 @@ resource "aws_ecs_task_definition" "client" {
 resource "aws_ecs_task_definition" "strapi" {
   family                   = "strapi"
   network_mode             = "awsvpc"
-  requires_compatibilities = ["FARGATE"]
-  cpu                      = 256
+  requires_compatibilities = ["EC2"]
+  cpu                      = 512
   memory                   = 512
-  task_role_arn            = var.ecs_task_role
-  execution_role_arn       = var.ecs_execution_role
+  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = aws_iam_role.ecs_exec_role.arn
 
   container_definitions = jsonencode([{
     "image" : format("%s:latest", var.strapi_ecr_uri),
-    "cpu" : 256,
+    "cpu" : 512,
     "memory" : 512,
     "name" : "strapi",
     "networkMode" : "awsvpc",
@@ -158,6 +186,13 @@ resource "aws_security_group" "client" {
   vpc_id = module.network.vpc_id
 
   ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr_block]
+  }
+
+  ingress {
     protocol        = "tcp"
     from_port       = 3000
     to_port         = 3000
@@ -174,6 +209,12 @@ resource "aws_security_group" "client" {
 resource "aws_security_group" "strapi" {
   name   = "${var.environment}-strapi-security-group"
   vpc_id = module.network.vpc_id
+  ingress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr_block]
+  }
 
   ingress {
     protocol        = "tcp"
@@ -194,16 +235,14 @@ resource "aws_security_group" "strapi" {
 resource "aws_ecs_cluster" "main" {
   name = "${var.environment}-cluster"
 }
-resource "aws_ecs_cluster_capacity_providers" "main" {
-  cluster_name = aws_ecs_cluster.main.name
 
-  capacity_providers = ["FARGATE", "FARGATE_SPOT"]
-
-  default_capacity_provider_strategy {
-    base              = 0
-    weight            = 1
-    capacity_provider = "FARGATE_SPOT"
-  }
+# Setup ASG
+module "asg" {
+  source         = "./modules/asg"
+  environment    = var.environment
+  vpc_id         = module.network.vpc_id
+  cluster_name   = aws_ecs_cluster.main.name
+  public_subnets = module.network.public_subnets.*.id
 }
 
 # ECS Services
@@ -217,7 +256,7 @@ resource "aws_ecs_service" "client" {
 
   network_configuration {
     security_groups = [aws_security_group.client.id]
-    subnets         = module.network.private_subnets.*.id
+    subnets         = module.network.public_subnets.*.id
   }
 
   load_balancer {
@@ -227,8 +266,8 @@ resource "aws_ecs_service" "client" {
   }
 
   capacity_provider_strategy {
+    capacity_provider = module.asg.capacity_provider_name
     base              = 0
-    capacity_provider = "FARGATE_SPOT"
     weight            = 1
   }
 
@@ -239,6 +278,10 @@ resource "aws_ecs_service" "client" {
 
   deployment_controller {
     type = "ECS"
+  }
+  ordered_placement_strategy {
+    type  = "binpack"
+    field = "cpu"
   }
 
   tags       = {}
@@ -253,9 +296,8 @@ resource "aws_ecs_service" "strapi" {
   desired_count                     = var.strapi_count
 
   network_configuration {
-    security_groups  = [aws_security_group.strapi.id]
-    subnets          = module.network.public_subnets.*.id
-    assign_public_ip = true
+    security_groups = [aws_security_group.strapi.id]
+    subnets         = module.network.public_subnets.*.id
   }
 
   load_balancer {
@@ -265,8 +307,8 @@ resource "aws_ecs_service" "strapi" {
   }
 
   capacity_provider_strategy {
+    capacity_provider = module.asg.capacity_provider_name
     base              = 0
-    capacity_provider = "FARGATE_SPOT"
     weight            = 1
   }
 
@@ -279,6 +321,100 @@ resource "aws_ecs_service" "strapi" {
     type = "ECS"
   }
 
+  ordered_placement_strategy {
+    type  = "binpack"
+    field = "cpu"
+  }
+
   tags       = {}
   depends_on = [module.lb.lb_listener, module.database.rds_instance]
 }
+
+# # --- ECS Service Auto Scaling ---
+# resource "aws_appautoscaling_target" "ecs_strapi_target" {
+#   service_namespace  = "ecs"
+#   scalable_dimension = "ecs:service:DesiredCount"
+#   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.strapi.name}"
+#   min_capacity       = 1
+#   max_capacity       = 2
+# }
+
+# resource "aws_appautoscaling_policy" "ecs_strapi_target_cpu" {
+#   name               = "application-scaling-policy-cpu"
+#   policy_type        = "TargetTrackingScaling"
+#   service_namespace  = aws_appautoscaling_target.ecs_strapi_target.service_namespace
+#   resource_id        = aws_appautoscaling_target.ecs_strapi_target.resource_id
+#   scalable_dimension = aws_appautoscaling_target.ecs_strapi_target.scalable_dimension
+
+#   target_tracking_scaling_policy_configuration {
+#     predefined_metric_specification {
+#       predefined_metric_type = "ECSServiceAverageCPUUtilization"
+#     }
+
+#     target_value       = 90
+#     scale_in_cooldown  = 300
+#     scale_out_cooldown = 300
+#   }
+# }
+
+# resource "aws_appautoscaling_policy" "ecs_strapi_target_memory" {
+#   name               = "application-scaling-policy-memory"
+#   policy_type        = "TargetTrackingScaling"
+#   resource_id        = aws_appautoscaling_target.ecs_strapi_target.resource_id
+#   scalable_dimension = aws_appautoscaling_target.ecs_strapi_target.scalable_dimension
+#   service_namespace  = aws_appautoscaling_target.ecs_strapi_target.service_namespace
+
+#   target_tracking_scaling_policy_configuration {
+#     predefined_metric_specification {
+#       predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+#     }
+
+#     target_value       = 90
+#     scale_in_cooldown  = 300
+#     scale_out_cooldown = 300
+#   }
+# }
+
+# resource "aws_appautoscaling_target" "ecs_client_target" {
+#   service_namespace  = "ecs"
+#   scalable_dimension = "ecs:service:DesiredCount"
+#   resource_id        = "service/${aws_ecs_cluster.main.name}/${aws_ecs_service.client.name}"
+#   min_capacity       = 1
+#   max_capacity       = 2
+# }
+
+# resource "aws_appautoscaling_policy" "ecs_client_target_cpu" {
+#   name               = "application-scaling-policy-cpu"
+#   policy_type        = "TargetTrackingScaling"
+#   service_namespace  = aws_appautoscaling_target.ecs_client_target.service_namespace
+#   resource_id        = aws_appautoscaling_target.ecs_client_target.resource_id
+#   scalable_dimension = aws_appautoscaling_target.ecs_client_target.scalable_dimension
+
+#   target_tracking_scaling_policy_configuration {
+#     predefined_metric_specification {
+#       predefined_metric_type = "ECSServiceAverageCPUUtilization"
+#     }
+
+#     target_value       = 90
+#     scale_in_cooldown  = 300
+#     scale_out_cooldown = 300
+#   }
+# }
+
+# resource "aws_appautoscaling_policy" "ecs_client_target_memory" {
+#   name               = "application-scaling-policy-memory"
+#   policy_type        = "TargetTrackingScaling"
+#   resource_id        = aws_appautoscaling_target.ecs_client_target.resource_id
+#   scalable_dimension = aws_appautoscaling_target.ecs_client_target.scalable_dimension
+#   service_namespace  = aws_appautoscaling_target.ecs_client_target.service_namespace
+
+#   target_tracking_scaling_policy_configuration {
+#     predefined_metric_specification {
+#       predefined_metric_type = "ECSServiceAverageMemoryUtilization"
+#     }
+
+#     target_value       = 90
+#     scale_in_cooldown  = 300
+#     scale_out_cooldown = 300
+#   }
+# }
