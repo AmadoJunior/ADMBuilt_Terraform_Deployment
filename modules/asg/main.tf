@@ -69,8 +69,8 @@ resource "aws_launch_template" "ecs_ec2" {
 resource "aws_autoscaling_group" "ecs" {
   name_prefix               = "ecs-asg-"
   vpc_zone_identifier       = var.public_subnets
-  min_size                  = 1
-  max_size                  = 1
+  min_size                  = var.min_size
+  max_size                  = var.max_size
   desired_capacity          = 1
   health_check_grace_period = 0
   health_check_type         = "EC2"

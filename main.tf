@@ -243,6 +243,8 @@ module "asg" {
   vpc_id         = module.network.vpc_id
   cluster_name   = aws_ecs_cluster.main.name
   public_subnets = module.network.public_subnets.*.id
+  max_size       = var.asg_max_size
+  min_size       = var.asg_min_size
 }
 
 # ECS Services
